@@ -655,7 +655,7 @@ async function renderDashboard() {
 
   function sectionHtml(label, items) {
     if (items.length === 0) return '';
-    return `<h3 class="text-sm font-bold text-gray-700 uppercase tracking-widest mt-5 mb-2 px-1">${label}</h3>${items.map(c => cleaningCard(c)).join('')}`;
+    return `<h3 class="text-sm font-bold text-gray-700 uppercase tracking-widest mt-5 mb-2 px-1 text-center">${label}</h3>${items.map(c => cleaningCard(c)).join('')}`;
   }
 
   const completed = state.cleanings.filter(c => c.status === 'completed').slice(0, 5);
