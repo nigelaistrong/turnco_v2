@@ -1,6 +1,6 @@
 {
-  "name": "TurnCo",
-  "short_name": "TurnCo",
+  "name": "TurnCo 2.0",
+  "short_name": "TurnCo 2.0",
   "description": "Cleaning coordination for short-term rentals",
   "start_url": "/",
   "display": "standalone",
