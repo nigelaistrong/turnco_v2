@@ -1,0 +1,2051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>TurnCo</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="TurnCo" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+    .status-scheduled  { background: #dbeafe; color: #1d4ed8; }
+    .status-in_progress { background: #fef9c3; color: #92400e; }
+    .status-completed  { background: #dcfce7; color: #166534; }
+    .status-issue_found { background: #fee2e2; color: #991b1b; }
+    .status-cancelled  { background: #f3f4f6; color: #4b5563; }
+    .nav-btn { transition: color 0.15s, border-color 0.15s; }
+    .nav-btn.active { color: #2563eb; border-color: #2563eb; }
+    .card { transition: box-shadow 0.15s; }
+    .card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.10); }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
+      border-color: #2563eb;
+    }
+    .modal-backdrop { background: rgba(0,0,0,0.45); backdrop-filter: blur(2px); }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-secondary { background: white; color: #374151; border: 1px solid #d1d5db; }
+    .btn-secondary:hover:not(:disabled) { background: #f9fafb; }
+    .toggle-on { background: #2563eb; }
+    .toggle-off { background: #d1d5db; }
+    .toggle-knob { transition: transform 0.2s; }
+    .toggle-on .toggle-knob { transform: translateX(20px); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 0.7s linear infinite; }
+    .slide-in { animation: slideIn 0.2s ease-out; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    /* Custom time picker */
+    .tc-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200;
+      display: flex; align-items: flex-end; justify-content: center;
+    }
+    .tc-sheet {
+      background: #1c1c1e; border-radius: 14px 14px 0 0;
+      width: 100%; max-width: 500px;
+      padding-bottom: max(env(safe-area-inset-bottom), 8px);
+    }
+    .tc-wheels-row {
+      display: flex; align-items: center; justify-content: center;
+      height: 220px; position: relative; overflow: hidden;
+    }
+    .tc-wheels-row::after {
+      content: ''; position: absolute;
+      top: 50%; transform: translateY(-50%);
+      left: 5%; right: 5%; height: 44px;
+      background: rgba(255,255,255,0.12); border-radius: 8px;
+      pointer-events: none; z-index: 1;
+    }
+    .tc-wheel {
+      flex: 1; height: 220px;
+      overflow-y: scroll; scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 35%, black 65%, transparent 100%);
+      mask-image: linear-gradient(to bottom, transparent 0%, black 35%, black 65%, transparent 100%);
+    }
+    .tc-wheel::-webkit-scrollbar { display: none; }
+    .tc-item {
+      height: 44px; display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 20px; scroll-snap-align: center; user-select: none; -webkit-user-select: none;
+    }
+    .tc-pad { pointer-events: none; }
+    .tc-sep { color: white; font-size: 22px; padding: 0 2px; flex-shrink: 0; }
+    .tc-actions {
+      display: flex; justify-content: space-between;
+      padding: 10px 24px 8px;
+      border-top: 1px solid rgba(255,255,255,0.15);
+    }
+    .tc-btn-reset, .tc-btn-done {
+      color: #0a84ff; font-size: 17px; background: none; border: none;
+      cursor: pointer; padding: 8px 4px;
+    }
+    .tc-btn-done { font-weight: 600; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- Auth Screen -->
+<div id="auth-screen" class="hidden fixed inset-0 bg-white z-50 flex flex-col items-center justify-center px-6">
+  <div class="w-full max-w-sm">
+    <!-- Logo -->
+    <div class="text-center mb-8">
+      <div class="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8 8 0 1 0 .5 4M20 7v4.5L16 13"/>
+        </svg>
+      </div>
+      <h1 class="text-2xl font-bold text-gray-900">TurnCo</h1>
+      <p class="text-gray-500 text-sm mt-1">Property turnover, simplified</p>
+    </div>
+
+    <!-- Tab Toggle -->
+    <div class="flex bg-gray-100 rounded-xl p-1 mb-6">
+      <button id="tab-login" onclick="showTab('login')"
+        class="flex-1 py-2 text-sm font-semibold rounded-lg bg-white text-gray-900 shadow-sm transition-all">
+        Log In
+      </button>
+      <button id="tab-signup" onclick="showTab('signup')"
+        class="flex-1 py-2 text-sm font-semibold rounded-lg text-gray-500 transition-all">
+        Sign Up
+      </button>
+    </div>
+
+    <!-- Login Form -->
+    <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+        <input type="email" name="email" required placeholder="you@example.com"
+          class="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+        <div class="relative">
+          <input type="password" name="password" id="login-password" required placeholder="••••••••"
+            class="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm bg-white pr-10" />
+          <button type="button" onclick="togglePw('login-password', 'eye-login')"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <svg id="eye-login" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <button type="button" onclick="handleForgotPassword()"
+        class="text-sm text-blue-600 hover:text-blue-800 font-medium -mt-2 text-left">
+        Forgot password?
+      </button>
+      <p id="login-error" class="text-red-500 text-sm hidden"></p>
+      <p id="login-success" class="text-green-600 text-sm hidden"></p>
+      <button type="submit" id="login-btn"
+        class="w-full btn-primary text-sm font-semibold py-3 rounded-xl">
+        Log In
+      </button>
+    </form>
+
+    <!-- Signup Form -->
+    <form id="signup-form" onsubmit="handleSignup(event)" class="space-y-4 hidden">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Company / Business Name</label>
+        <input type="text" name="company" required placeholder="e.g. Sparkle Clean Co"
+          class="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+        <input type="email" name="email" required placeholder="you@example.com"
+          class="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+        <div class="relative">
+          <input type="password" name="password" id="signup-password" required placeholder="Min 6 characters"
+            class="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm bg-white pr-10" />
+          <button type="button" onclick="togglePw('signup-password', 'eye-signup')"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <svg id="eye-signup" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+        <div class="relative">
+          <input type="password" name="confirm_password" id="signup-confirm" required placeholder="Re-enter password"
+            class="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm bg-white pr-10" />
+          <button type="button" onclick="togglePw('signup-confirm', 'eye-confirm')"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <svg id="eye-confirm" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <p id="signup-error" class="text-red-500 text-sm hidden"></p>
+      <button type="submit" id="signup-btn"
+        class="w-full btn-primary text-sm font-semibold py-3 rounded-xl">
+        Create Account
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- App Shell -->
+<div id="app" class="hidden max-w-lg mx-auto min-h-screen flex flex-col">
+
+  <!-- Top Header -->
+  <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8 8 0 1 0 .5 4M20 7v4.5L16 13"/>
+        </svg>
+      </div>
+      <span class="text-xl font-bold text-gray-900">TurnCo</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <div id="company-name" class="text-sm text-gray-500 font-medium truncate max-w-[110px]"></div>
+      <button onclick="handleSignOut()" title="Sign out"
+        class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- View Content -->
+  <main id="content" class="flex-1 overflow-y-auto pb-20">
+    <div id="loading-screen" class="flex flex-col items-center justify-center h-64 gap-4">
+      <svg class="spinner w-8 h-8 text-blue-600" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+      </svg>
+      <p class="text-gray-500 text-sm">Loading TurnCo...</p>
+    </div>
+  </main>
+
+  <!-- Bottom Nav -->
+  <nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-lg bg-white border-t border-gray-200 z-30" style="padding-bottom: max(env(safe-area-inset-bottom), 12px)">
+    <div class="flex">
+      <button onclick="navigate('dashboard')" id="nav-dashboard"
+        class="nav-btn flex-1 flex flex-col items-center py-3 gap-0.5 text-xs text-gray-500 border-t-2 border-transparent">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+        </svg>
+        Dashboard
+      </button>
+      <button onclick="navigate('properties')" id="nav-properties"
+        class="nav-btn flex-1 flex flex-col items-center py-3 gap-0.5 text-xs text-gray-500 border-t-2 border-transparent">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1V10"/>
+        </svg>
+        Properties
+      </button>
+      <button onclick="navigate('cleaners')" id="nav-cleaners"
+        class="nav-btn flex-1 flex flex-col items-center py-3 gap-0.5 text-xs text-gray-500 border-t-2 border-transparent">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Cleaners
+      </button>
+    </div>
+  </nav>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="hidden fixed inset-0 z-50 flex items-center justify-center modal-backdrop p-4">
+  <div id="modal-box" class="bg-white rounded-2xl w-full max-w-lg shadow-2xl slide-in" style="max-height: 90vh; display: flex; flex-direction: column;">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+      <h3 id="modal-title" class="text-lg font-semibold text-gray-900"></h3>
+      <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div id="modal-body" class="px-5 py-4 overflow-y-auto flex-1"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium max-w-xs text-center transition-all"></div>
+
+<script>
+// ─── Config ──────────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://mcbnmsbinjvpqtszvkvj.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_q2wvjcEbs-BhWMzzjVL9zw_d0mUFam8';
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let COMPANY_ID = null;
+let state = {
+  view: 'dashboard',
+  cleanings: [],
+  properties: [],
+  cleaners: [],
+  company: null,
+  loading: false,
+};
+let _autoRefreshTimer = null;
+function startAutoRefresh() {
+  stopAutoRefresh();
+  _autoRefreshTimer = setInterval(async () => {
+    if (state.view === 'dashboard' && !state.loading) await renderDashboard();
+  }, 60000);
+}
+function stopAutoRefresh() {
+  if (_autoRefreshTimer) { clearInterval(_autoRefreshTimer); _autoRefreshTimer = null; }
+}
+
+// ─── Auth UI ──────────────────────────────────────────────────────────────────
+function togglePw(inputId, eyeId) {
+  const input = document.getElementById(inputId);
+  const eye = document.getElementById(eyeId);
+  if (input.type === 'password') {
+    input.type = 'text';
+    eye.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>`;
+  } else {
+    input.type = 'password';
+    eye.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>`;
+  }
+}
+
+async function handleForgotPassword() {
+  const form = document.getElementById('login-form');
+  const email = form.email.value.trim();
+  const errEl = document.getElementById('login-error');
+  const successEl = document.getElementById('login-success');
+  errEl.classList.add('hidden');
+  successEl.classList.add('hidden');
+  if (!email) {
+    errEl.textContent = 'Enter your email address above first.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  await db.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+  successEl.textContent = '✓ Password reset email sent — check your inbox.';
+  successEl.classList.remove('hidden');
+}
+
+function showTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('login-form').classList.toggle('hidden', !isLogin);
+  document.getElementById('signup-form').classList.toggle('hidden', isLogin);
+  document.getElementById('tab-login').className = `flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${isLogin ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`;
+  document.getElementById('tab-signup').className = `flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${!isLogin ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`;
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('login-btn');
+  const errEl = document.getElementById('login-error');
+  errEl.classList.add('hidden');
+  btn.disabled = true;
+  btn.textContent = 'Logging in...';
+
+  const { data, error } = await db.auth.signInWithPassword({
+    email: form.email.value.trim(),
+    password: form.password.value,
+  });
+
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Log In';
+    return;
+  }
+
+  await bootApp(data.user);
+}
+
+async function handleSignup(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('signup-btn');
+  const errEl = document.getElementById('signup-error');
+  errEl.classList.add('hidden');
+  btn.disabled = true;
+  btn.textContent = 'Creating account...';
+
+  const companyName = form.company.value.trim();
+  const email = form.email.value.trim();
+  const password = form.password.value;
+  const confirmPassword = form.confirm_password.value;
+
+  if (password !== confirmPassword) {
+    errEl.textContent = 'Passwords do not match.';
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+    return;
+  }
+
+  // Create auth user
+  const { data, error } = await db.auth.signUp({ email, password });
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+    return;
+  }
+
+  // Check if a company already exists with this email
+  let companyId = null;
+  const { data: existing } = await db.from('companies').select('id').eq('email', email).single();
+
+  if (existing) {
+    // Link to existing company
+    companyId = existing.id;
+  } else {
+    // Create new company record
+    const { data: company, error: companyError } = await db
+      .from('companies')
+      .insert([{ name: companyName, email }])
+      .select()
+      .single();
+
+    if (companyError) {
+      errEl.textContent = 'Account created but failed to set up company. Please contact support.';
+      errEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Create Account';
+      return;
+    }
+    companyId = company.id;
+  }
+
+  // Store company_id in user metadata
+  await db.auth.updateUser({ data: { company_id: companyId } });
+
+  await bootApp(data.user, companyId);
+}
+
+async function handleSignOut() {
+  await db.auth.signOut();
+  COMPANY_ID = null;
+  state = { view: 'dashboard', cleanings: [], properties: [], cleaners: [], company: null, loading: false };
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('auth-screen').classList.remove('hidden');
+  document.getElementById('company-name').textContent = '';
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+async function bootApp(user, companyIdOverride) {
+  // Resolve company_id
+  let companyId = companyIdOverride || user?.user_metadata?.company_id;
+
+  // Fallback: look up company by email (handles existing users)
+  if (!companyId && user?.email) {
+    const { data } = await db.from('companies').select('id').eq('email', user.email).single();
+    if (data) {
+      companyId = data.id;
+      // Save for next time
+      await db.auth.updateUser({ data: { company_id: companyId } });
+    }
+  }
+
+  if (!companyId) {
+    document.getElementById('auth-screen').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    document.getElementById('content').innerHTML = `
+      <div class="px-4 pt-8 text-center">
+        <p class="text-gray-800 font-semibold">No company linked to this account.</p>
+        <p class="text-gray-500 text-sm mt-1">Please sign up to create a new account.</p>
+        <button onclick="handleSignOut()" class="mt-4 btn-secondary text-sm font-semibold px-5 py-2.5 rounded-xl">Sign Out</button>
+      </div>`;
+    return;
+  }
+
+  COMPANY_ID = companyId;
+  document.getElementById('auth-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+
+  await loadCompany();
+  navigate('dashboard');
+}
+
+async function loadCompany() {
+  const { data } = await db.from('companies').select('*').eq('id', COMPANY_ID).single();
+  if (data) {
+    state.company = data;
+    document.getElementById('company-name').textContent = data.name;
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  // Handle password reset redirect (Supabase puts #type=recovery in the URL)
+  const hash = new URLSearchParams(window.location.hash.replace('#', '?'));
+  if (hash.get('type') === 'recovery') {
+    document.getElementById('loading-screen').classList.add('hidden');
+    showResetPasswordScreen();
+    return;
+  }
+
+  const { data: { session } } = await db.auth.getSession();
+  if (session?.user) {
+    await bootApp(session.user);
+  } else {
+    document.getElementById('loading-screen').classList.add('hidden');
+    document.getElementById('auth-screen').classList.remove('hidden');
+  }
+}
+
+function showResetPasswordScreen() {
+  const authScreen = document.getElementById('auth-screen');
+  authScreen.classList.remove('hidden');
+  authScreen.innerHTML = `
+    <div class="w-full max-w-sm mx-auto px-6 py-10">
+      <div class="text-center mb-8">
+        <div class="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+        <h1 class="text-2xl font-bold text-gray-900">Set New Password</h1>
+        <p class="text-gray-500 text-sm mt-1">Choose a new password for your account</p>
+      </div>
+      <form onsubmit="handleResetPassword(event)" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+          <input type="password" id="new-password" required placeholder="Min 6 characters"
+            class="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm bg-white" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+          <input type="password" id="confirm-new-password" required placeholder="Re-enter password"
+            class="w-full px-3 py-3 border border-gray-300 rounded-xl text-sm bg-white" />
+        </div>
+        <p id="reset-error" class="text-red-500 text-sm hidden"></p>
+        <button type="submit" id="reset-btn" class="w-full btn-primary text-sm font-semibold py-3 rounded-xl">
+          Update Password
+        </button>
+      </form>
+    </div>
+  `;
+}
+
+async function handleResetPassword(e) {
+  e.preventDefault();
+  const pw = document.getElementById('new-password').value;
+  const confirm = document.getElementById('confirm-new-password').value;
+  const errEl = document.getElementById('reset-error');
+  const btn = document.getElementById('reset-btn');
+  errEl.classList.add('hidden');
+  if (pw !== confirm) {
+    errEl.textContent = 'Passwords don\'t match.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (pw.length < 6) {
+    errEl.textContent = 'Password must be at least 6 characters.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Updating...';
+  const { error } = await db.auth.updateUser({ password: pw });
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Update Password';
+  } else {
+    window.location.hash = '';
+    window.location.reload();
+  }
+}
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
+function navigate(view) {
+  state.view = view;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('nav-' + view)?.classList.add('active');
+  render();
+}
+
+async function render() {
+  const content = document.getElementById('content');
+  content.innerHTML = `<div class="flex items-center justify-center h-40">
+    <svg class="spinner w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+    </svg>
+  </div>`;
+
+  if (state.view === 'dashboard') { await renderDashboard(); startAutoRefresh(); }
+  else { stopAutoRefresh(); if (state.view === 'properties') await renderProperties();
+  else if (state.view === 'cleaners') await renderCleaners(); }
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+async function renderDashboard() {
+  let cleaningsRes, cleanersRes, propsRes;
+  try {
+    [cleaningsRes, cleanersRes, propsRes] = await Promise.all([
+      db.from('cleanings')
+        .select('*, properties(name, address, cleaning_buffer_hours)')
+        .eq('company_id', COMPANY_ID)
+        .not('status', 'eq', 'cancelled')
+        .order('cleaning_date', { ascending: true }),
+      db.from('cleaners')
+        .select('id, name, email')
+        .eq('company_id', COMPANY_ID)
+        .eq('active', true),
+      db.from('properties')
+        .select('last_synced_at')
+        .eq('company_id', COMPANY_ID)
+        .eq('active', true)
+        .order('last_synced_at', { ascending: false })
+        .limit(1),
+    ]);
+  } catch (e) {
+    showError(e);
+    return;
+  }
+
+  if (cleaningsRes.error) { showError(cleaningsRes.error); return; }
+
+  state.cleanings = cleaningsRes.data || [];
+  state.cleaners = cleanersRes.data || [];
+
+  const lastSynced = propsRes.data?.[0]?.last_synced_at;
+  const lastSyncedStr = lastSynced
+    ? new Date(lastSynced).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+    : 'Never';
+
+  const today = new Date().toISOString().split('T')[0];
+  const todayDate = new Date(today + 'T00:00:00');
+
+  // Calculate start/end of this week (Sun–Sat) and next week
+  const dayOfWeek = todayDate.getDay(); // 0=Sun, 6=Sat
+  const endOfThisWeek = new Date(todayDate); endOfThisWeek.setDate(todayDate.getDate() + (6 - dayOfWeek));
+  const endOfThisWeekStr = endOfThisWeek.toISOString().split('T')[0];
+  const startOfNextWeek = new Date(endOfThisWeek); startOfNextWeek.setDate(endOfThisWeek.getDate() + 1);
+  const startOfNextWeekStr = startOfNextWeek.toISOString().split('T')[0];
+  const endOfNextWeek = new Date(startOfNextWeek); endOfNextWeek.setDate(startOfNextWeek.getDate() + 6);
+  const endOfNextWeekStr = endOfNextWeek.toISOString().split('T')[0];
+
+  const upcoming = state.cleanings.filter(c => c.cleaning_date >= today && c.status !== 'completed');
+  const todayGroup    = upcoming.filter(c => c.cleaning_date === today);
+  const thisWeekGroup = upcoming.filter(c => c.cleaning_date > today && c.cleaning_date <= endOfThisWeekStr);
+  const nextWeekGroup = upcoming.filter(c => c.cleaning_date >= startOfNextWeekStr && c.cleaning_date <= endOfNextWeekStr);
+  const afterGroup    = upcoming.filter(c => c.cleaning_date > endOfNextWeekStr);
+
+  function sectionHtml(label, items) {
+    if (items.length === 0) return '';
+    return `<h3 class="text-sm font-bold text-gray-700 uppercase tracking-widest mt-5 mb-2 px-1">${label}</h3>${items.map(c => cleaningCard(c)).join('')}`;
+  }
+
+  const completed = state.cleanings.filter(c => c.status === 'completed').slice(0, 5);
+
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-5 pb-2 slide-in">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-xl font-bold text-gray-900">Upcoming Cleanings</h2>
+        <div class="flex items-center gap-2">
+          <button onclick="openAddCleaningModal()"
+            class="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-xl hover:bg-gray-100 transition-colors border border-gray-200">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add
+          </button>
+          <button id="sync-btn" onclick="manualSync()"
+            class="flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-xl hover:bg-blue-50 transition-colors border border-blue-200">
+            <svg id="sync-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 11a8 8 0 1 0 .5 4M20 7v4.5L16 13"/>
+            </svg>
+            Sync
+          </button>
+        </div>
+      </div>
+      <p class="text-sm text-gray-500 mb-4">${upcoming.length} scheduled</p>
+
+      ${upcoming.length === 0 ? `
+        ${(propsRes.data?.length ?? 0) === 0 ? `
+          <div class="bg-white rounded-2xl border border-blue-100 p-8 text-center shadow-sm">
+            <div class="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+              </svg>
+            </div>
+            <p class="text-gray-800 text-base font-semibold mb-1">Welcome to TurnCo! 👋</p>
+            <p class="text-gray-500 text-sm mb-5">Add your first property to start tracking cleanings automatically.</p>
+            <button onclick="navigate('properties')" class="bg-blue-600 text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-blue-700 transition-colors">
+              Add Your First Property →
+            </button>
+          </div>
+        ` : `
+          <div class="bg-white rounded-2xl border border-gray-100 p-8 text-center shadow-sm">
+            <div class="w-14 h-14 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
+              <svg class="w-7 h-7 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+            </div>
+            <p class="text-gray-500 text-sm font-medium">All caught up!</p>
+            <p class="text-gray-400 text-xs mt-1">No upcoming cleanings scheduled</p>
+          </div>
+        `}
+      ` : `
+        ${sectionHtml('Today', todayGroup)}
+        ${sectionHtml('This Week', thisWeekGroup)}
+        ${sectionHtml('Next Week', nextWeekGroup)}
+        ${sectionHtml('After', afterGroup)}
+      `}
+
+      ${completed.length > 0 ? `
+        <h2 class="text-lg font-bold text-gray-900 mt-6 mb-1">Recently Completed</h2>
+        <p class="text-sm text-gray-500 mb-4">${completed.length} done</p>
+        ${completed.map(c => cleaningCard(c)).join('')}
+      ` : ''}
+
+      <p class="text-xs text-gray-400 text-center mt-6 mb-2">Last synced: ${lastSyncedStr}</p>
+    </div>
+  `;
+}
+
+async function manualSync() {
+  const btn = document.getElementById('sync-btn');
+  const icon = document.getElementById('sync-icon');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.querySelector('span') && (btn.querySelector('span').textContent = 'Syncing…');
+  icon.classList.add('spinner');
+
+  try {
+    const res = await fetch('/api/sync-ical');
+    if (!res.ok && res.status !== 204) throw new Error('Bad response');
+    showToast('Sync complete!', 'success');
+    await renderDashboard();
+  } catch (e) {
+    showToast('Sync failed. Please try again.', 'error');
+    btn.disabled = false;
+    icon.classList.remove('spinner');
+  }
+}
+
+function cleaningCard(c) {
+  const cleaner = state.cleaners.find(cl => cl.id === c.cleaner_id);
+  const cleanerName = cleaner ? cleaner.name : 'Unassigned';
+  const propertyName = c.properties?.name || 'Unknown Property';
+  const date = formatDate(c.cleaning_date);
+  const statusLabel = statusLabels[c.status] || c.status;
+  const isCompleted = c.status === 'completed';
+  const isUrgent = !isCompleted && c.next_checkin_date && c.next_checkin_date === c.cleaning_date;
+  const isManual = c.airbnb_reservation_url === 'manual';
+
+  return `
+    <div class="card bg-white rounded-2xl border border-gray-100 p-4 mb-3 shadow-sm ${isUrgent ? 'border-l-4 border-l-orange-400' : ''}">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            ${isUrgent ? '<span title="Next guest checks in same day — prioritize!" class="text-base leading-none">⚡</span>' : ''}
+            <h3 class="font-semibold text-gray-900 text-base leading-tight truncate">${propertyName}</h3>
+            ${isManual ? '<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 shrink-0">Manual</span>' : ''}
+          </div>
+          <div class="flex items-center gap-2 mt-0.5">
+            <p class="text-sm text-gray-500">${date}</p>
+            ${isManual && !isCompleted ? `<button onclick="openEditCleaningModal('${c.id}')" class="text-xs text-gray-400 hover:text-blue-600 font-medium underline underline-offset-2 transition-colors">Edit Date</button>` : ''}
+          </div>
+          ${isUrgent ? '<p class="text-xs text-orange-600 font-semibold mt-0.5">Same-day check-in</p>' : ''}
+        </div>
+        <div class="flex items-center gap-1.5 ml-2 shrink-0">
+          <span class="status-${c.status} text-xs font-semibold px-2.5 py-1 rounded-full">${statusLabel}</span>
+          ${isManual ? `<button onclick="deleteCleaningConfirm('${c.id}')" title="Delete"
+            class="p-1 text-gray-300 hover:text-red-500 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+          </button>` : ''}
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 mb-3">
+        <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        ${!isCompleted ? buildTimeSelect(c.id, c.cleaning_time) : (c.cleaning_time ? `<span class="text-sm text-gray-500">${formatTime(c.cleaning_time)}</span>` : '')}
+        <svg class="w-4 h-4 text-gray-400 shrink-0 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+        </svg>
+        <span class="text-sm ${cleaner ? 'text-gray-700 font-medium' : 'text-amber-600 font-medium'}">${cleanerName}</span>
+        ${!isCompleted ? `<button onclick="addToCalendar('${c.id}')" class="ml-auto text-xs text-blue-500 hover:text-blue-700 font-medium underline underline-offset-2 transition-colors whitespace-nowrap shrink-0">Add to Calendar</button>` : ''}
+      </div>
+      ${c.notes ? `<p class="text-xs text-gray-500 mb-3 bg-gray-50 rounded-lg p-2 italic">"${c.notes}"</p>` : ''}
+      ${!isCompleted ? `
+        <div class="flex gap-2">
+          <button onclick="openAssignModal('${c.id}')"
+            class="flex-1 btn-secondary text-sm font-medium py-2 px-3 rounded-xl">
+            ${cleaner ? 'Reassign' : 'Assign Cleaner'}
+          </button>
+          <button onclick="markComplete('${c.id}', this)"
+            class="flex-1 btn-primary text-sm font-medium py-2 px-3 rounded-xl">
+            Mark Complete
+          </button>
+        </div>
+      ` : `
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-gray-400">${c.completed_at ? 'Completed ' + formatDate(c.completed_at.split('T')[0]) : 'Completed'}</span>
+          <button onclick="undoComplete('${c.id}', this)"
+            class="text-xs text-gray-400 hover:text-blue-600 font-medium underline underline-offset-2 transition-colors">
+            Undo
+          </button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+async function openAddCleaningModal() {
+  const properties = state.properties.length > 0 ? state.properties :
+    (await db.from('properties').select('id, name').eq('company_id', COMPANY_ID).eq('active', true)).data || [];
+  const cleaners = state.cleaners.length > 0 ? state.cleaners :
+    (await db.from('cleaners').select('id, name').eq('company_id', COMPANY_ID).eq('active', true)).data || [];
+
+  const today = new Date().toISOString().split('T')[0];
+
+  openModal('Add Cleaning', `
+    <form onsubmit="submitAddCleaning(event)" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Property *</label>
+        <select name="property_id" required
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white">
+          <option value="">— Select property —</option>
+          ${properties.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+        <input type="date" name="cleaning_date" required value="${today}"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+        <input type="hidden" name="cleaning_time" id="modal-add-time-value" value="">
+        <button type="button" id="modal-add-time-btn"
+          onclick="openTimePicker('__add__', document.getElementById('modal-add-time-value').value)"
+          class="text-sm text-gray-700 border border-gray-300 rounded-xl px-3 py-2.5 bg-white w-full text-left">
+          Set time
+        </button>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Assign Cleaner</label>
+        <select name="cleaner_id"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white">
+          <option value="">— Unassigned —</option>
+          ${cleaners.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="flex items-center gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" name="quick_turn" class="w-4 h-4 rounded border-gray-300 accent-orange-500" />
+          <span class="text-sm font-medium text-gray-700">⚡ Quick turn — next guest checks in same day</span>
+        </label>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+        <textarea name="notes" rows="2" placeholder="Any special instructions…"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white resize-none"></textarea>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal()"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Cancel</button>
+        <button type="submit" id="add-cleaning-btn"
+          class="flex-1 btn-primary text-sm font-semibold py-2.5 rounded-xl">Add Cleaning</button>
+      </div>
+    </form>
+  `);
+  // Register picker callback for the add modal (no DB save — just update hidden input + button)
+  _tcCallbacks['__add__'] = function(timeValue) {
+    const hidden = document.getElementById('modal-add-time-value');
+    const btn = document.getElementById('modal-add-time-btn');
+    if (hidden) hidden.value = timeValue || '';
+    if (btn) btn.textContent = timeValue ? formatTime(timeValue) : 'Set time';
+  };
+}
+
+async function submitAddCleaning(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('add-cleaning-btn');
+  btn.disabled = true;
+  btn.textContent = 'Adding...';
+
+  const cleaningDate = form.cleaning_date.value;
+  const payload = {
+    company_id: COMPANY_ID,
+    property_id: parseInt(form.property_id.value),
+    cleaner_id: form.cleaner_id.value ? parseInt(form.cleaner_id.value) : null,
+    cleaning_date: cleaningDate,
+    cleaning_time: form.cleaning_time.value || null,
+    notes: form.notes.value.trim() || null,
+    status: 'scheduled',
+    checkout_date: cleaningDate,
+    next_checkin_date: form.quick_turn.checked ? cleaningDate : null,
+    airbnb_reservation_url: 'manual',
+  };
+
+  const { error } = await db.from('cleanings').insert([payload]);
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = 'Add Cleaning';
+    showToast('Failed to add cleaning: ' + error.message, 'error');
+  } else {
+    closeModal();
+    showToast('Cleaning added!', 'success');
+    await renderDashboard();
+  }
+}
+
+function deleteCleaningConfirm(cleaningId) {
+  openModal('Delete Cleaning', `
+    <div class="space-y-4">
+      <p class="text-gray-600 text-sm">Are you sure you want to delete this manually created cleaning? This cannot be undone.</p>
+      <div class="flex gap-3">
+        <button onclick="closeModal()"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Cancel</button>
+        <button onclick="deleteCleaning('${cleaningId}')"
+          class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 rounded-xl">Delete</button>
+      </div>
+    </div>
+  `);
+}
+
+async function deleteCleaning(cleaningId) {
+  closeModal();
+  const { error } = await db.from('cleanings').delete().eq('id', cleaningId);
+  if (error) {
+    showToast('Failed to delete cleaning.', 'error');
+  } else {
+    showToast('Cleaning deleted.', 'success');
+    await renderDashboard();
+  }
+}
+
+async function saveCleaningTime(cleaningId, timeValue) {
+  const val = timeValue || null;
+  await db.from('cleanings').update({ cleaning_time: val }).eq('id', cleaningId);
+  const c = state.cleanings.find(c => c.id == cleaningId);
+  if (c) c.cleaning_time = val;
+}
+
+const statusLabels = {
+  scheduled: 'Scheduled',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  issue_found: 'Issue Found',
+  cancelled: 'Cancelled',
+};
+
+// ─── Properties ───────────────────────────────────────────────────────────────
+async function renderProperties() {
+  const { data, error } = await db.from('properties')
+    .select('*, hosts(name)')
+    .eq('company_id', COMPANY_ID)
+    .order('created_at', { ascending: false });
+
+  if (error) { showError(error); return; }
+  state.properties = data || [];
+
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-5 pb-2 slide-in">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-xl font-bold text-gray-900">Properties</h2>
+          <p class="text-sm text-gray-500">${state.properties.length} total</p>
+        </div>
+        <button onclick="openAddPropertyModal()"
+          class="btn-primary text-sm font-semibold px-4 py-2.5 rounded-xl flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+          </svg>
+          Add Property
+        </button>
+      </div>
+
+      ${state.properties.length === 0 ? `
+        <div class="bg-white rounded-2xl border border-gray-100 p-8 text-center shadow-sm">
+          <div class="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
+            <svg class="w-7 h-7 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1V10"/>
+            </svg>
+          </div>
+          <p class="text-gray-500 text-sm font-medium">No properties yet</p>
+          <p class="text-gray-400 text-xs mt-1">Add your first property to get started</p>
+        </div>
+      ` : state.properties.map(p => `
+        <div class="card bg-white rounded-2xl border border-gray-100 p-4 mb-3 shadow-sm">
+          <div class="flex items-start justify-between">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <h3 class="font-semibold text-gray-900 text-base truncate">${p.name}</h3>
+                <span class="shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${p.active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}">
+                  ${p.active ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+              ${p.address ? `<p class="text-sm text-gray-500 mb-1.5 flex items-start gap-1">
+                <svg class="w-4 h-4 shrink-0 mt-0.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                <span class="truncate">${p.address}</span>
+              </p>` : ''}
+              ${p.hosts?.name ? `<p class="text-xs text-gray-400">Host: ${p.hosts.name}</p>` : ''}
+              ${p.ical_url ? `<p class="text-xs text-gray-400 truncate mt-1 font-mono">${truncateUrl(p.ical_url)}</p>` : ''}
+            </div>
+            <div class="flex items-center gap-1 shrink-0 ml-2">
+              <button onclick="openEditPropertyModal('${p.id}')"
+                class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                title="Edit">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+              </button>
+              <button onclick="deletePropertyConfirm('${p.id}', '${escapeHtml(p.name)}')"
+                class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="Delete">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          ${p.last_synced_at ? `<p class="text-xs text-gray-400 mt-2">Last synced: ${formatDate(p.last_synced_at.split('T')[0])}</p>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ─── Cleaners ─────────────────────────────────────────────────────────────────
+async function renderCleaners() {
+  const { data, error } = await db.from('cleaners')
+    .select('*')
+    .eq('company_id', COMPANY_ID)
+    .order('name');
+
+  if (error) { showError(error); return; }
+  state.cleaners = data || [];
+
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-5 pb-2 slide-in">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-xl font-bold text-gray-900">Cleaners</h2>
+          <p class="text-sm text-gray-500">${state.cleaners.filter(c=>c.active).length} active</p>
+        </div>
+        <button onclick="openAddCleanerModal()"
+          class="btn-primary text-sm font-semibold px-4 py-2.5 rounded-xl flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+          </svg>
+          Add Cleaner
+        </button>
+      </div>
+
+      ${state.cleaners.length === 0 ? `
+        <div class="bg-white rounded-2xl border border-gray-100 p-8 text-center shadow-sm">
+          <div class="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
+            <svg class="w-7 h-7 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+          </div>
+          <p class="text-gray-500 text-sm font-medium">No cleaners yet</p>
+          <p class="text-gray-400 text-xs mt-1">Add your first team member</p>
+        </div>
+      ` : state.cleaners.map(c => `
+        <div class="card bg-white rounded-2xl border border-gray-100 p-4 mb-3 shadow-sm">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+              <div class="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center shrink-0">
+                <span class="text-blue-600 font-bold text-base">${c.name.charAt(0).toUpperCase()}</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="font-semibold text-gray-900 text-base">${c.name}</p>
+                ${c.email ? `<p class="text-sm text-gray-500 truncate">${c.email}</p>` : '<p class="text-sm text-gray-400 italic">No email</p>'}
+                ${c.phone ? `<p class="text-sm text-gray-400">${c.phone}</p>` : ''}
+              </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0 ml-2">
+              <button onclick="openEditCleanerModal('${c.id}')"
+                class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                title="Edit">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+              </button>
+              <button onclick="deleteCleanerConfirm('${c.id}', '${escapeHtml(c.name)}')"
+                class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="Delete">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+              <button onclick="toggleCleanerActive('${c.id}', ${c.active}, this)"
+                class="relative inline-flex w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none ${c.active ? 'toggle-on' : 'toggle-off'}"
+                title="${c.active ? 'Deactivate' : 'Activate'}">
+                <span class="toggle-knob inline-block w-5 h-5 bg-white rounded-full shadow mt-0.5 ml-0.5"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+async function markComplete(cleaningId, btn) {
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="spinner w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24">
+    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+  </svg>`;
+
+  const { error } = await db.from('cleanings').update({
+    status: 'completed',
+    completed_at: new Date().toISOString(),
+  }).eq('id', cleaningId);
+
+  if (error) {
+    btn.disabled = false;
+    btn.innerHTML = original;
+    showToast('Failed to update. Please try again.', 'error');
+  } else {
+    showToast('Cleaning marked as complete!', 'success');
+    await renderDashboard();
+  }
+}
+
+function openEditCleaningModal(cleaningId) {
+  const c = state.cleanings.find(cl => cl.id == cleaningId);
+  if (!c) return;
+  const isQuickTurn = c.next_checkin_date && c.next_checkin_date === c.cleaning_date;
+  openModal('Edit Cleaning', `
+    <form onsubmit="submitEditCleaning(event, '${cleaningId}')" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+        <input type="date" name="cleaning_date" required value="${c.cleaning_date}"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="flex items-center gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" name="quick_turn" ${isQuickTurn ? 'checked' : ''}
+            class="w-4 h-4 rounded border-gray-300 accent-orange-500" />
+          <span class="text-sm font-medium text-gray-700">⚡ Quick turn — next guest checks in same day</span>
+        </label>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal()"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Cancel</button>
+        <button type="submit" id="edit-cleaning-btn"
+          class="flex-1 btn-primary text-sm font-semibold py-2.5 rounded-xl">Save</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitEditCleaning(e, cleaningId) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('edit-cleaning-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  const cleaningDate = form.cleaning_date.value;
+  const { error } = await db.from('cleanings').update({
+    cleaning_date: cleaningDate,
+    next_checkin_date: form.quick_turn.checked ? cleaningDate : null,
+  }).eq('id', cleaningId);
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+    showToast('Failed to update cleaning.', 'error');
+  } else {
+    closeModal();
+    showToast('Cleaning updated!', 'success');
+    await renderDashboard();
+  }
+}
+
+async function undoComplete(cleaningId, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  const { error } = await db.from('cleanings').update({
+    status: 'scheduled',
+    completed_at: null,
+  }).eq('id', cleaningId);
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = 'Undo';
+    showToast('Failed to undo. Please try again.', 'error');
+  } else {
+    showToast('Marked as scheduled again.', 'success');
+    await renderDashboard();
+  }
+}
+
+async function openAssignModal(cleaningId) {
+  const cleaning = state.cleanings.find(c => c.id === cleaningId);
+  const cleaners = state.cleaners.length > 0 ? state.cleaners :
+    (await db.from('cleaners').select('id, name').eq('company_id', COMPANY_ID).eq('active', true)).data || [];
+
+  if (cleaners.length === 0) {
+    showToast('No active cleaners available. Add cleaners first.', 'error');
+    return;
+  }
+
+  const existingNotes = cleaning?.notes || '';
+
+  openModal('Assign Cleaner', `
+    <div class="space-y-4">
+      <p class="text-sm text-gray-500">Assign a cleaner to <strong class="text-gray-800">${cleaning?.properties?.name || 'this cleaning'}</strong></p>
+
+      <!-- Notes section (required) -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Notes for cleaner</label>
+        <textarea id="assign-notes" rows="3" placeholder="Any special instructions, access codes, priorities…"
+          oninput="updateAssignState()"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white resize-none">${escapeHtml(existingNotes)}</textarea>
+        <label class="flex items-center gap-2 mt-2 cursor-pointer select-none">
+          <input type="checkbox" id="no-notes-check" onchange="updateAssignState()"
+            class="w-4 h-4 rounded border-gray-300 text-blue-600 accent-blue-600" />
+          <span class="text-sm text-gray-600">No notes needed</span>
+        </label>
+        <label class="flex items-center gap-2 mt-1.5 cursor-pointer select-none">
+          <input type="checkbox" id="send-email-check"
+            class="w-4 h-4 rounded border-gray-300 accent-blue-600" />
+          <span class="text-sm text-gray-600">Email cleaner calendar invite</span>
+        </label>
+      </div>
+
+      <p id="assign-hint" class="text-xs text-amber-600 font-medium -mt-1">Add notes above, or check "No notes needed" to continue.</p>
+
+      <!-- Cleaner list (locked until notes filled) -->
+      <div id="cleaner-list" class="space-y-2 opacity-40 pointer-events-none transition-opacity">
+        ${cleaners.map(cl => `
+          <button onclick="assignCleaner('${cleaningId}', '${cl.id}', '${escapeHtml(cl.name)}')"
+            class="w-full text-left px-4 py-3 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors flex items-center gap-3 ${cleaning?.cleaner_id === cl.id ? 'border-blue-400 bg-blue-50' : ''}">
+            <div class="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
+              <span class="text-blue-600 font-bold">${cl.name.charAt(0).toUpperCase()}</span>
+            </div>
+            <span class="font-medium text-gray-800">${cl.name}</span>
+            ${cleaning?.cleaner_id === cl.id ? '<span class="ml-auto text-xs text-blue-600 font-semibold">Current</span>' : ''}
+          </button>
+        `).join('')}
+      </div>
+      ${cleaning?.cleaner_id ? `
+        <button onclick="assignCleaner('${cleaningId}', null, null)"
+          class="w-full text-sm text-red-500 hover:text-red-700 py-2 font-medium">
+          Remove assignment
+        </button>
+      ` : ''}
+    </div>
+  `);
+
+  // Unlock immediately if notes already exist
+  updateAssignState();
+}
+
+function updateAssignState() {
+  const notesEl = document.getElementById('assign-notes');
+  const noNotesEl = document.getElementById('no-notes-check');
+  const cleanerList = document.getElementById('cleaner-list');
+  const hint = document.getElementById('assign-hint');
+  if (!notesEl || !noNotesEl) return;
+
+  const hasNotes = notesEl.value.trim().length > 0;
+  const noNotes = noNotesEl.checked;
+
+  // Disable textarea when "No notes" is checked
+  notesEl.disabled = noNotes;
+  notesEl.classList.toggle('opacity-50', noNotes);
+
+  // Unlock cleaner list when either condition met
+  const ready = hasNotes || noNotes;
+  cleanerList?.classList.toggle('opacity-40', !ready);
+  cleanerList?.classList.toggle('pointer-events-none', !ready);
+  hint?.classList.toggle('hidden', ready);
+}
+
+const pendingEmails = {}; // kept for reference, no longer used for timers
+
+async function assignCleaner(cleaningId, cleanerId, cleanerName) {
+  // Capture notes and email preference from modal DOM before closing
+  const notesEl = document.getElementById('assign-notes');
+  const noNotesEl = document.getElementById('no-notes-check');
+  const sendEmailEl = document.getElementById('send-email-check');
+  let notesValue = undefined;
+  const shouldSendEmail = sendEmailEl?.checked ?? false;
+  if (notesEl !== null) {
+    notesValue = noNotesEl?.checked ? null : (notesEl.value.trim() || null);
+  }
+
+  closeModal();
+
+  const updatePayload = { cleaner_id: cleanerId };
+  if (cleanerId && notesValue !== undefined) {
+    updatePayload.notes = notesValue;
+  }
+
+  const { error } = await db.from('cleanings').update(updatePayload).eq('id', cleaningId);
+  if (error) {
+    showToast('Failed to assign cleaner.', 'error');
+    return;
+  }
+
+  // Update local state notes too
+  const cleaningState = state.cleanings.find(c => c.id == cleaningId);
+  if (cleaningState && notesValue !== undefined) cleaningState.notes = notesValue;
+
+  // Send email immediately if assigning (not removing)
+  if (cleanerId) {
+    const cleaning = state.cleanings.find(c => c.id == cleaningId);
+    const cleaner = state.cleaners.find(c => c.id === parseInt(cleanerId));
+    await renderDashboard();
+    if (!shouldSendEmail) {
+      showToast(`${cleanerName} assigned!`, 'success');
+    } else if (!cleaner?.email) {
+      showToast(`${cleanerName} assigned! No email address on file.`, 'error');
+    } else if (cleaning) {
+      const emailNotes = notesValue !== undefined ? notesValue : cleaning.notes;
+      try {
+        const r = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cleaningId,
+            cleanerEmail: cleaner.email,
+            cleanerName: cleaner.name,
+            propertyName: cleaning.properties?.name || 'Property',
+            propertyAddress: cleaning.properties?.address || '',
+            cleaningDate: cleaning.cleaning_date,
+            cleaningTime: cleaning.cleaning_time,
+            notes: emailNotes,
+            isQuickTurn: !!(cleaning.next_checkin_date && cleaning.next_checkin_date === cleaning.cleaning_date),
+          }),
+        });
+        if (r.ok) {
+          showToast(`${cleanerName} assigned! Email sent to cleaner.`, 'success');
+        } else {
+          let errMsg = 'unknown error';
+          try { const d = await r.json(); errMsg = d.error || errMsg; } catch {}
+          showToast(`Email error: ${errMsg}`, 'error');
+          console.error('Email send failed:', errMsg);
+        }
+      } catch (e) {
+        showToast(`Email error: ${e.message}`, 'error');
+        console.error('Email send exception:', e);
+      }
+    } else {
+      showToast(`${cleanerName} assigned!`, 'success');
+    }
+  } else {
+    showToast('Cleaner removed.', 'success');
+    await renderDashboard();
+  }
+}
+
+async function toggleCleanerActive(cleanerId, currentActive, btn) {
+  btn.disabled = true;
+  const newActive = !currentActive;
+  const { error } = await db.from('cleaners').update({ active: newActive }).eq('id', cleanerId);
+  if (error) {
+    btn.disabled = false;
+    showToast('Failed to update cleaner status.', 'error');
+  } else {
+    if (newActive) {
+      btn.classList.remove('toggle-off');
+      btn.classList.add('toggle-on');
+    } else {
+      btn.classList.remove('toggle-on');
+      btn.classList.add('toggle-off');
+    }
+    btn.onclick = () => toggleCleanerActive(cleanerId, newActive, btn);
+    btn.disabled = false;
+    showToast(newActive ? 'Cleaner activated.' : 'Cleaner deactivated.', 'success');
+  }
+}
+
+function openEditCleanerModal(cleanerId) {
+  const c = state.cleaners.find(cl => cl.id === parseInt(cleanerId));
+  if (!c) return;
+  openModal('Edit Cleaner', `
+    <form onsubmit="submitEditCleaner(event, '${cleanerId}')" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+        <input type="text" name="name" required value="${escapeHtml(c.name)}"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+        <input type="email" name="email" value="${escapeHtml(c.email || '')}"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+        <input type="tel" name="phone" value="${escapeHtml(c.phone || '')}"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal()"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Cancel</button>
+        <button type="submit" id="edit-cleaner-btn"
+          class="flex-1 btn-primary text-sm font-semibold py-2.5 rounded-xl">Save Changes</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitEditCleaner(e, cleanerId) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('edit-cleaner-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  const { error } = await db.from('cleaners').update({
+    name: form.name.value.trim(),
+    email: form.email.value.trim() || null,
+    phone: form.phone.value.trim() || null,
+  }).eq('id', cleanerId);
+
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+    showToast('Failed to update cleaner.', 'error');
+  } else {
+    closeModal();
+    showToast('Cleaner updated!', 'success');
+    await renderCleaners();
+  }
+}
+
+function deleteCleanerConfirm(cleanerId, cleanerName) {
+  openModal('Delete Cleaner', `
+    <div class="space-y-4">
+      <p class="text-gray-600 text-sm">Are you sure you want to delete <strong>${cleanerName}</strong>? This cannot be undone.</p>
+      <div class="flex gap-3">
+        <button onclick="closeModal()"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Cancel</button>
+        <button onclick="deleteCleaner('${cleanerId}')"
+          class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 rounded-xl">Delete</button>
+      </div>
+    </div>
+  `);
+}
+
+async function deleteCleaner(cleanerId) {
+  closeModal();
+  const { error } = await db.from('cleaners').delete().eq('id', cleanerId);
+  if (error) {
+    showToast('Failed to delete cleaner.', 'error');
+  } else {
+    showToast('Cleaner deleted.', 'success');
+    await renderCleaners();
+  }
+}
+
+// ─── Add Property Modal ───────────────────────────────────────────────────────
+async function openAddPropertyModal() {
+  const cleaners = state.cleaners.length > 0 ? state.cleaners :
+    (await db.from('cleaners').select('id, name').eq('company_id', COMPANY_ID).eq('active', true)).data || [];
+
+  const cleanerOptions = [
+    `<option value="">— None —</option>`,
+    ...cleaners.map(cl => `<option value="${cl.id}">${escapeHtml(cl.name)}</option>`)
+  ].join('');
+
+  openModal('Add Property', `
+    <form onsubmit="submitAddProperty(event)" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Property Name *</label>
+        <input type="text" name="name" required placeholder="e.g. The Lazy Bear Cabin"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+        <input type="text" name="address" placeholder="123 Main St, City, State"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">iCal URL</label>
+        <div class="relative">
+          <input type="url" name="ical_url" id="add-ical-input" placeholder="https://www.airbnb.com/calendar/ical/..."
+            class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white pr-9"
+            oninput="validateIcalUrl('add-ical-input', 'add-ical-status')" />
+          <span id="add-ical-status" class="absolute right-3 top-1/2 -translate-y-1/2 text-base leading-none pointer-events-none"></span>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Find this in your Airbnb listing → Availability settings → Export Calendar</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Cleaning Buffer (hours)</label>
+        <select name="cleaning_buffer_hours" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white">
+          <option value="0.5">0.5 hrs</option>
+          <option value="1">1 hr</option>
+          <option value="1.5">1.5 hrs</option>
+          <option value="2" selected>2 hrs</option>
+          <option value="2.5">2.5 hrs</option>
+          <option value="3">3 hrs</option>
+          <option value="4">4 hrs</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Default Cleaner</label>
+        <select name="default_cleaner_id"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white">
+          ${cleanerOptions}
+        </select>
+        <p class="text-xs text-gray-400 mt-1">Auto-assigned & emailed when a new booking syncs in</p>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal()"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Cancel</button>
+        <button type="submit" id="add-property-btn"
+          class="flex-1 btn-primary text-sm font-semibold py-2.5 rounded-xl">Add Property</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitAddProperty(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('add-property-btn');
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = 'Adding...';
+
+  const payload = {
+    company_id: COMPANY_ID,
+    name: form.name.value.trim(),
+    address: form.address.value.trim() || null,
+    ical_url: form.ical_url.value.trim() || null,
+    cleaning_buffer_hours: parseFloat(form.cleaning_buffer_hours.value) || 2,
+    default_cleaner_id: form.default_cleaner_id.value ? parseInt(form.default_cleaner_id.value) : null,
+    active: true,
+  };
+
+  const { error } = await db.from('properties').insert([payload]);
+  if (error) {
+    btn.disabled = false;
+    btn.innerHTML = original;
+    showToast('Failed to add property: ' + error.message, 'error');
+  } else {
+    closeModal();
+    showToast('Property added!', 'success');
+    await renderProperties();
+  }
+}
+
+async function openEditPropertyModal(propertyId) {
+  const p = state.properties.find(pr => pr.id === parseInt(propertyId));
+  if (!p) return;
+
+  const cleaners = state.cleaners.length > 0 ? state.cleaners :
+    (await db.from('cleaners').select('id, name').eq('company_id', COMPANY_ID).eq('active', true)).data || [];
+
+  const cleanerOptions = [
+    `<option value="">— None —</option>`,
+    ...cleaners.map(cl => `<option value="${cl.id}" ${p.default_cleaner_id === cl.id ? 'selected' : ''}>${escapeHtml(cl.name)}</option>`)
+  ].join('');
+
+  openModal('Edit Property', `
+    <form onsubmit="submitEditProperty(event, '${propertyId}')" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Property Name *</label>
+        <input type="text" name="name" required value="${escapeHtml(p.name)}"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+        <input type="text" name="address" value="${escapeHtml(p.address || '')}"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">iCal URL</label>
+        <div class="relative">
+          <input type="url" name="ical_url" id="edit-ical-input" value="${escapeHtml(p.ical_url || '')}"
+            class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white pr-9"
+            oninput="validateIcalUrl('edit-ical-input', 'edit-ical-status')" />
+          <span id="edit-ical-status" class="absolute right-3 top-1/2 -translate-y-1/2 text-base leading-none pointer-events-none"></span>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Cleaning Buffer (hours)</label>
+        <select name="cleaning_buffer_hours" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white">
+          ${[0.5,1,1.5,2,2.5,3,4].map(v => `<option value="${v}"${(p.cleaning_buffer_hours||2)==v?' selected':''}>${v < 2 ? v+' hr' : v+' hrs'}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Default Cleaner</label>
+        <select name="default_cleaner_id"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white">
+          ${cleanerOptions}
+        </select>
+        <p class="text-xs text-gray-400 mt-1">Auto-assigned & emailed when a new booking syncs in</p>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal()"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Cancel</button>
+        <button type="submit" id="edit-property-btn"
+          class="flex-1 btn-primary text-sm font-semibold py-2.5 rounded-xl">Save Changes</button>
+      </div>
+    </form>
+  `);
+  // Auto-validate existing iCal URL when modal opens
+  if (p.ical_url) validateIcalUrl('edit-ical-input', 'edit-ical-status');
+}
+
+async function submitEditProperty(e, propertyId) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('edit-property-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  const { error } = await db.from('properties').update({
+    name: form.name.value.trim(),
+    address: form.address.value.trim() || null,
+    ical_url: form.ical_url.value.trim() || null,
+    cleaning_buffer_hours: parseFloat(form.cleaning_buffer_hours.value) || 2,
+    default_cleaner_id: form.default_cleaner_id.value ? parseInt(form.default_cleaner_id.value) : null,
+  }).eq('id', propertyId);
+
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = 'Save Changes';
+    showToast('Failed to update property.', 'error');
+  } else {
+    closeModal();
+    showToast('Property updated!', 'success');
+    await renderProperties();
+  }
+}
+
+function deletePropertyConfirm(propertyId, propertyName) {
+  openModal('Delete Property', `
+    <div class="space-y-4">
+      <p class="text-gray-600 text-sm">Are you sure you want to delete <strong>${propertyName}</strong>? All associated cleanings will also be deleted.</p>
+      <div class="flex gap-3">
+        <button onclick="closeModal()"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Cancel</button>
+        <button onclick="deleteProperty('${propertyId}')"
+          class="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 rounded-xl">Delete</button>
+      </div>
+    </div>
+  `);
+}
+
+async function deleteProperty(propertyId) {
+  closeModal();
+  const { error } = await db.from('properties').delete().eq('id', propertyId);
+  if (error) {
+    showToast('Failed to delete property.', 'error');
+  } else {
+    showToast('Property deleted.', 'success');
+    await renderProperties();
+  }
+}
+
+// ─── Add Cleaner Modal ────────────────────────────────────────────────────────
+function openAddCleanerModal() {
+  openModal('Add Cleaner', `
+    <form onsubmit="submitAddCleaner(event)" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+        <input type="text" name="name" required placeholder="e.g. Maria Santos"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+        <input type="email" name="email" placeholder="maria@example.com"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+        <input type="tel" name="phone" placeholder="+1 (555) 000-0000"
+          class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm bg-white" />
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal()"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Cancel</button>
+        <button type="submit" id="add-cleaner-btn"
+          class="flex-1 btn-primary text-sm font-semibold py-2.5 rounded-xl">Add Cleaner</button>
+      </div>
+    </form>
+  `);
+}
+
+async function submitAddCleaner(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = document.getElementById('add-cleaner-btn');
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = 'Adding...';
+
+  const payload = {
+    company_id: COMPANY_ID,
+    name: form.name.value.trim(),
+    email: form.email.value.trim() || null,
+    phone: form.phone.value.trim() || null,
+    active: true,
+  };
+
+  const { error } = await db.from('cleaners').insert([payload]);
+  if (error) {
+    btn.disabled = false;
+    btn.innerHTML = original;
+    showToast('Failed to add cleaner: ' + error.message, 'error');
+  } else {
+    closeModal();
+    showToast('Cleaner added!', 'success');
+    await renderCleaners();
+  }
+}
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+function openModal(title, body) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = body;
+  document.getElementById('modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal')) closeModal();
+});
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type = 'success') {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = `fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium max-w-xs text-center transition-all ${
+    type === 'success' ? 'bg-gray-900 text-white' : 'bg-red-600 text-white'
+  }`;
+  toast.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.add('hidden'), 3000);
+}
+
+function showError(err) {
+  // Detect offline / network failure
+  const msg = err?.message || '';
+  if (!navigator.onLine || msg.includes('Load failed') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+    showOfflineError();
+    return;
+  }
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-8 text-center">
+      <div class="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-3">
+        <svg class="w-7 h-7 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+      </div>
+      <p class="text-gray-800 font-semibold mb-1">Something went wrong</p>
+      <p class="text-red-500 text-sm">${err.message}</p>
+      <button onclick="render()" class="mt-4 btn-primary text-sm font-semibold px-5 py-2.5 rounded-xl">Try Again</button>
+    </div>
+  `;
+}
+
+function showOfflineError() {
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="px-4 pt-16 text-center">
+      <svg class="w-16 h-16 mx-auto mb-5 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="1" y1="1" x2="23" y2="23"/>
+        <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+        <path d="M10.71 5.05A16 16 0 0 1 22.56 9"/>
+        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+        <circle cx="12" cy="20" r=".5" fill="currentColor"/>
+      </svg>
+      <p class="text-gray-800 text-lg font-semibold mb-2">No Internet Connection</p>
+      <p class="text-gray-400 text-sm mb-6">Check your connection and try again.</p>
+      <button onclick="render()" class="btn-primary text-sm font-semibold px-6 py-2.5 rounded-xl">Try Again</button>
+    </div>
+  `;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function buildTimeSelect(cleaningId, currentTime) {
+  const display = currentTime ? formatTime(currentTime) : 'Set time';
+  return '<button onclick="openTimePicker(\'' + cleaningId + '\', \'' + (currentTime || '') + '\')" ' +
+    'id="tc-btn-' + cleaningId + '" ' +
+    'class="text-sm text-gray-700 border border-gray-200 rounded-lg px-2 py-1 bg-white whitespace-nowrap">' +
+    display + '</button>';
+}
+
+const _tcCallbacks = {};
+
+function openTimePicker(cleaningId, currentTime, onDone) {
+  if (onDone) _tcCallbacks[cleaningId] = onDone;
+  const ITEM_H = 44;
+  const PAD = 2;
+  const hours = [1,2,3,4,5,6,7,8,9,10,11,12];
+  const mins = [0,10,20,30,40,50];
+  const ampms = ['AM','PM'];
+
+  let initH = 8, initM = 0, initAP = 'AM';
+  if (currentTime) {
+    const parts = currentTime.split(':');
+    const h24 = parseInt(parts[0]) || 8;
+    const m = parseInt(parts[1]) || 0;
+    initAP = h24 >= 12 ? 'PM' : 'AM';
+    initH = h24 % 12 || 12;
+    initM = Math.round(m / 10) * 10 % 60;
+  }
+
+  function makeWheel(id, items, fmt) {
+    let html = '<div class="tc-wheel" id="' + id + '">';
+    for (let i = 0; i < PAD; i++) html += '<div class="tc-item tc-pad"> </div>';
+    items.forEach(function(v) { html += '<div class="tc-item">' + fmt(v) + '</div>'; });
+    for (let i = 0; i < PAD; i++) html += '<div class="tc-item tc-pad"> </div>';
+    html += '</div>';
+    return html;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'tc-overlay-' + cleaningId;
+  overlay.className = 'tc-overlay';
+  overlay.innerHTML =
+    '<div class="tc-sheet">' +
+      '<div class="tc-wheels-row">' +
+        makeWheel('tc-h-' + cleaningId, hours, function(v) { return v; }) +
+        '<div class="tc-sep">:</div>' +
+        makeWheel('tc-m-' + cleaningId, mins, function(v) { return String(v).padStart(2,'0'); }) +
+        makeWheel('tc-ap-' + cleaningId, ampms, function(v) { return v; }) +
+      '</div>' +
+      '<div class="tc-actions">' +
+        '<button class="tc-btn-reset" onclick="resetTimePicker(\'' + cleaningId + '\')">Reset</button>' +
+        '<button class="tc-btn-done" onclick="doneTimePicker(\'' + cleaningId + '\')">Done</button>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  requestAnimationFrame(function() {
+    const hEl = document.getElementById('tc-h-' + cleaningId);
+    const mEl = document.getElementById('tc-m-' + cleaningId);
+    const apEl = document.getElementById('tc-ap-' + cleaningId);
+    if (hEl) hEl.scrollTop = hours.indexOf(initH) * ITEM_H;
+    if (mEl) mEl.scrollTop = mins.indexOf(initM) * ITEM_H;
+    if (apEl) apEl.scrollTop = ampms.indexOf(initAP) * ITEM_H;
+  });
+}
+
+async function doneTimePicker(cleaningId) {
+  const ITEM_H = 44;
+  const hours = [1,2,3,4,5,6,7,8,9,10,11,12];
+  const mins = [0,10,20,30,40,50];
+  const ampms = ['AM','PM'];
+
+  const hEl = document.getElementById('tc-h-' + cleaningId);
+  const mEl = document.getElementById('tc-m-' + cleaningId);
+  const apEl = document.getElementById('tc-ap-' + cleaningId);
+
+  const hIdx = Math.min(Math.max(Math.round((hEl ? hEl.scrollTop : 0) / ITEM_H), 0), hours.length - 1);
+  const mIdx = Math.min(Math.max(Math.round((mEl ? mEl.scrollTop : 0) / ITEM_H), 0), mins.length - 1);
+  const apIdx = Math.min(Math.max(Math.round((apEl ? apEl.scrollTop : 0) / ITEM_H), 0), ampms.length - 1);
+
+  const h12 = hours[hIdx];
+  const min = mins[mIdx];
+  const ampm = ampms[apIdx];
+
+  let h24 = h12 % 12;
+  if (ampm === 'PM') h24 += 12;
+  const timeValue = String(h24).padStart(2,'0') + ':' + String(min).padStart(2,'0');
+
+  const cb = _tcCallbacks[cleaningId];
+  if (cb) {
+    delete _tcCallbacks[cleaningId];
+    cb(timeValue);
+  } else {
+    const btn = document.getElementById('tc-btn-' + cleaningId);
+    if (btn) btn.textContent = formatTime(timeValue);
+    await saveCleaningTime(cleaningId, timeValue);
+  }
+  closeTimePicker(cleaningId);
+}
+
+function resetTimePicker(cleaningId) {
+  closeTimePicker(cleaningId);
+  const cb = _tcCallbacks[cleaningId];
+  if (cb) {
+    delete _tcCallbacks[cleaningId];
+    cb(null);
+  } else {
+    saveCleaningTime(cleaningId, null);
+    const btn = document.getElementById('tc-btn-' + cleaningId);
+    if (btn) btn.textContent = 'Set time';
+  }
+}
+
+function closeTimePicker(cleaningId) {
+  const el = document.getElementById('tc-overlay-' + cleaningId);
+  if (el) el.remove();
+}
+
+function addToCalendar(cleaningId) {
+  const c = state.cleanings.find(cl => cl.id == cleaningId);
+  if (!c) return;
+
+  const propertyName = c.properties?.name || 'Cleaning';
+  const propertyAddress = c.properties?.address || '';
+  const time = c.cleaning_time || '08:00';
+  const [y, mo, d] = c.cleaning_date.split('-');
+  const [h, m] = time.split(':').map(Number);
+  const bufferMins = Math.round((c.properties?.cleaning_buffer_hours || 2) * 60);
+  const endTotalMins = h * 60 + m + bufferMins;
+  const endH = String(Math.floor(endTotalMins / 60) % 24).padStart(2, '0');
+  const endM = String(endTotalMins % 60).padStart(2, '0');
+  const hStr = String(h).padStart(2, '0');
+  const mStr = String(m).padStart(2, '0');
+
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//TurnCo//EN',
+    'BEGIN:VEVENT',
+    `UID:cleaning-${cleaningId}-${Date.now()}@turnco.app`,
+    `DTSTART;TZID=${tz}:${y}${mo}${d}T${hStr}${mStr}00`,
+    `DTEND;TZID=${tz}:${y}${mo}${d}T${endH}${endM}00`,
+    `SUMMARY:Cleaning — ${propertyName}`,
+    propertyAddress ? `LOCATION:${propertyAddress}` : '',
+    `DESCRIPTION:${c.notes ? c.notes : 'Cleaning at ' + propertyName + ' via TurnCo.'}`,
+    'STATUS:CONFIRMED',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n');
+
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cleaning-${propertyName.replace(/\s+/g, '-')}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+let _icalValidateTimer = null;
+async function validateIcalUrl(inputId, statusId) {
+  const input = document.getElementById(inputId);
+  const status = document.getElementById(statusId);
+  if (!input || !status) return;
+  const url = input.value.trim();
+
+  clearTimeout(_icalValidateTimer);
+  status.innerHTML = '';
+  input.style.borderColor = '';
+
+  if (!url) return;
+
+  // Show spinner
+  status.innerHTML = `<svg class="w-4 h-4 text-gray-400 animate-spin inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>`;
+
+  _icalValidateTimer = setTimeout(async () => {
+    try {
+      const r = await fetch(`/api/validate-ical?url=${encodeURIComponent(url)}`);
+      const data = await r.json();
+      if (data.valid) {
+        status.innerHTML = '✅';
+      } else {
+        status.innerHTML = '❌';
+      }
+    } catch {
+      status.innerHTML = '❌';
+    }
+  }, 800);
+}
+
+function formatTime(timeStr) {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function truncateUrl(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    return u.hostname + (url.length > 50 ? '...' : u.pathname.slice(0, 30));
+  } catch { return url.slice(0, 50) + (url.length > 50 ? '...' : ''); }
+}
+
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+init().catch(err => {
+  document.getElementById('loading-screen').classList.add('hidden');
+  document.getElementById('auth-screen').classList.remove('hidden');
+});
+
+// Register service worker for PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
