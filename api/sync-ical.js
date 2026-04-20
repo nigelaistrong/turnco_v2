@@ -166,6 +166,7 @@ export default async function handler(req, res) {
           property_id: prop.id,
           company_id: prop.company_id,
           cleaner_id: prop.default_cleaner_id || null,
+          checkin_date: booking.checkin,
           checkout_date: booking.checkout,
           cleaning_date: booking.checkout,
           next_checkin_date: nextCheckin,
