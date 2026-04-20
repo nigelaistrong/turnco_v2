@@ -757,6 +757,13 @@ function cleaningCard(c) {
   const isUrgent = !isCompleted && c.next_checkin_date && c.next_checkin_date === c.cleaning_date;
   const isManual = c.airbnb_reservation_url === 'manual';
 
+  // Date range: checkout → next check-in
+  const checkoutDate = c.checkout_date || c.cleaning_date;
+  const checkinDate = c.next_checkin_date;
+  const dateRange = (checkinDate && checkinDate !== checkoutDate)
+    ? formatDateRange(checkoutDate, checkinDate)
+    : date;
+
   return `
     <div class="card bg-white rounded-2xl border border-gray-100 p-4 mb-3 shadow-sm ${isUrgent ? 'border-l-4 border-l-orange-400' : ''}">
       <div class="flex items-start justify-between mb-2">
@@ -767,7 +774,7 @@ function cleaningCard(c) {
             ${isManual ? '<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 shrink-0">Manual</span>' : ''}
           </div>
           <div class="flex items-center gap-2 mt-0.5">
-            <p class="text-sm text-gray-500">${date}</p>
+            <p class="text-sm text-gray-500">${dateRange}</p>
             ${isManual && !isCompleted ? `<button onclick="openEditCleaningModal('${c.id}')" class="text-xs text-gray-400 hover:text-blue-600 font-medium underline underline-offset-2 transition-colors">Edit Date</button>` : ''}
           </div>
           ${isUrgent ? '<p class="text-xs text-orange-600 font-semibold mt-0.5">Same-day check-in</p>' : ''}
@@ -1955,6 +1962,15 @@ function formatDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T12:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatDateRange(startStr, endStr) {
+  const start = new Date(startStr + 'T12:00:00');
+  const end = new Date(endStr + 'T12:00:00');
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const startFmt = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
+  const endFmt = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${startFmt} – ${endFmt}`;
 }
 
 function buildTimeSelect(cleaningId, currentTime) {
