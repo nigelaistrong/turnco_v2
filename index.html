@@ -1130,12 +1130,127 @@ async function renderCleaners() {
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 async function markComplete(cleaningId, btn) {
-  const original = btn.innerHTML;
+  openPhotoUploadModal(cleaningId);
+}
+
+function openPhotoUploadModal(cleaningId) {
+  const c = state.cleanings.find(cl => cl.id == cleaningId);
+  const propertyName = c?.properties?.name || 'this property';
+
+  openModal('Upload Photos', `
+    <div class="space-y-4">
+      <p class="text-sm text-gray-500">Upload before/after photos of <strong class="text-gray-800">${escapeHtml(propertyName)}</strong> before marking complete.</p>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-2">Select Photos (5–10 recommended)</label>
+        <div id="photo-drop-zone"
+          class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+          onclick="document.getElementById('photo-file-input').click()">
+          <svg class="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+          <p class="text-sm font-medium text-gray-600">Tap to select photos</p>
+          <p class="text-xs text-gray-400 mt-1">JPG, PNG, HEIC supported</p>
+        </div>
+        <input type="file" id="photo-file-input" multiple accept="image/*" class="hidden"
+          onchange="previewPhotos(this.files)" />
+      </div>
+
+      <div id="photo-preview-grid" class="grid grid-cols-3 gap-2 hidden"></div>
+      <p id="photo-count-hint" class="text-xs text-gray-400 text-center hidden"></p>
+
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="skipPhotosAndComplete('${cleaningId}')"
+          class="flex-1 btn-secondary text-sm font-semibold py-2.5 rounded-xl">Skip Photos</button>
+        <button type="button" id="submit-photos-btn" onclick="submitPhotosAndComplete('${cleaningId}')" disabled
+          class="flex-1 btn-primary text-sm font-semibold py-2.5 rounded-xl opacity-60 cursor-not-allowed">
+          Submit & Complete
+        </button>
+      </div>
+      <p id="photo-upload-error" class="text-red-500 text-xs text-center hidden"></p>
+    </div>
+  `);
+}
+
+function previewPhotos(files) {
+  const grid = document.getElementById('photo-preview-grid');
+  const hint = document.getElementById('photo-count-hint');
+  const submitBtn = document.getElementById('submit-photos-btn');
+  if (!grid || !files || files.length === 0) return;
+
+  grid.innerHTML = '';
+  grid.classList.remove('hidden');
+
+  Array.from(files).forEach(file => {
+    const url = URL.createObjectURL(file);
+    const div = document.createElement('div');
+    div.className = 'relative aspect-square rounded-xl overflow-hidden bg-gray-100';
+    div.innerHTML = `<img src="${url}" class="w-full h-full object-cover" />`;
+    grid.appendChild(div);
+  });
+
+  hint.textContent = `${files.length} photo${files.length !== 1 ? 's' : ''} selected`;
+  hint.classList.remove('hidden');
+
+  submitBtn.disabled = false;
+  submitBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+}
+
+async function submitPhotosAndComplete(cleaningId) {
+  const input = document.getElementById('photo-file-input');
+  const btn = document.getElementById('submit-photos-btn');
+  const errEl = document.getElementById('photo-upload-error');
+  const files = input?.files;
+
+  if (!files || files.length === 0) {
+    skipPhotosAndComplete(cleaningId);
+    return;
+  }
+
   btn.disabled = true;
-  btn.innerHTML = `<svg class="spinner w-4 h-4 mx-auto" fill="none" viewBox="0 0 24 24">
-    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-  </svg>`;
+  btn.textContent = 'Uploading...';
+  errEl.classList.add('hidden');
+
+  const uploadedUrls = [];
+
+  try {
+    for (const file of Array.from(files)) {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `${cleaningId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { data, error } = await db.storage
+        .from('cleaning-photos')
+        .upload(path, file, { upsert: false });
+
+      if (error) throw error;
+
+      const { data: urlData } = db.storage
+        .from('cleaning-photos')
+        .getPublicUrl(data.path);
+
+      uploadedUrls.push(urlData.publicUrl);
+    }
+
+    if (uploadedUrls.length > 0) {
+      const rows = uploadedUrls.map(url => ({ cleaning_id: parseInt(cleaningId), url }));
+      const { error: insertError } = await db.from('cleaning_photos').insert(rows);
+      if (insertError) throw insertError;
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Submit & Complete';
+    errEl.textContent = 'Upload failed: ' + (err.message || 'Please try again.');
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  await finishMarkComplete(cleaningId, uploadedUrls.length > 0);
+}
+
+async function skipPhotosAndComplete(cleaningId) {
+  await finishMarkComplete(cleaningId, false);
+}
+
+async function finishMarkComplete(cleaningId, photosUploaded) {
+  closeModal();
 
   const { error } = await db.from('cleanings').update({
     status: 'completed',
@@ -1143,13 +1258,36 @@ async function markComplete(cleaningId, btn) {
   }).eq('id', cleaningId);
 
   if (error) {
-    btn.disabled = false;
-    btn.innerHTML = original;
-    showToast('Failed to update. Please try again.', 'error');
+    showToast('Failed to mark complete. Please try again.', 'error');
+    return;
+  }
+
+  if (photosUploaded) {
+    const c = state.cleanings.find(cl => cl.id == cleaningId);
+    const ownerEmail = state.company?.email;
+    if (ownerEmail && c) {
+      try {
+        await fetch('/api/send-gallery-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cleaningId,
+            ownerEmail,
+            propertyName: c.properties?.name || 'Property',
+            cleaningDate: c.cleaning_date,
+            cleanerName: state.cleaners.find(cl => cl.id === c.cleaner_id)?.name || '',
+          }),
+        });
+      } catch (e) {
+        console.error('Gallery email failed:', e);
+      }
+    }
+    showToast('Photos uploaded & cleaning complete!', 'success');
   } else {
     showToast('Cleaning marked as complete!', 'success');
-    await renderDashboard();
   }
+
+  await renderDashboard();
 }
 
 function openEditCleaningModal(cleaningId) {
