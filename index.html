@@ -757,11 +757,11 @@ function cleaningCard(c) {
   const isUrgent = !isCompleted && c.next_checkin_date && c.next_checkin_date === c.cleaning_date;
   const isManual = c.airbnb_reservation_url === 'manual';
 
-  // Date range: checkout → next check-in
+  // Date range: guest check-in → checkout
+  const checkinDate = c.checkin_date;
   const checkoutDate = c.checkout_date || c.cleaning_date;
-  const checkinDate = c.next_checkin_date;
   const dateRange = (checkinDate && checkinDate !== checkoutDate)
-    ? formatDateRange(checkoutDate, checkinDate)
+    ? formatDateRange(checkinDate, checkoutDate)
     : date;
 
   return `
