@@ -151,16 +151,23 @@ export default async function handler(req, res) {
       const icalText = await icalRes.text();
       const bookings = parseIcal(icalText);
 
-      // Get existing cleaning dates for this property
-      const existing = await sbGet(`cleanings?property_id=eq.${prop.id}&select=checkout_date`);
-      const existingDates = new Set(Array.isArray(existing) ? existing.map(c => c.checkout_date) : []);
+      // Get existing cleanings for this property
+      const existing = await sbGet(`cleanings?property_id=eq.${prop.id}&select=id,checkout_date,checkin_date`);
+      const existingMap = {};
+      if (Array.isArray(existing)) existing.forEach(c => { existingMap[c.checkout_date] = c; });
 
       for (let i = 0; i < bookings.length; i++) {
         const booking = bookings[i];
-        if (existingDates.has(booking.checkout)) continue;
-
-        // Next check-in is the start of the following booking
         const nextCheckin = bookings[i + 1]?.checkin || null;
+
+        // Backfill checkin_date on existing cleanings that are missing it
+        if (existingMap[booking.checkout]) {
+          const ex = existingMap[booking.checkout];
+          if (!ex.checkin_date && booking.checkin) {
+            await sbPatch(`cleanings?id=eq.${ex.id}`, { checkin_date: booking.checkin });
+          }
+          continue;
+        }
 
         const payload = {
           property_id: prop.id,
