@@ -1147,6 +1147,7 @@ async function markComplete(cleaningId, btn) {
 }
 
 function openPhotoUploadModal(cleaningId) {
+  _selectedPhotoFiles = [];
   const c = state.cleanings.find(cl => cl.id == cleaningId);
   const propertyName = c?.properties?.name || 'this property';
 
@@ -1184,16 +1185,17 @@ function openPhotoUploadModal(cleaningId) {
   `);
 }
 
+let _selectedPhotoFiles = [];
+
 function previewPhotos(files) {
   const grid = document.getElementById('photo-preview-grid');
   const hint = document.getElementById('photo-count-hint');
   const submitBtn = document.getElementById('submit-photos-btn');
   if (!grid || !files || files.length === 0) return;
 
-  grid.innerHTML = '';
-  grid.classList.remove('hidden');
-
+  // Append new files to accumulated list
   Array.from(files).forEach(file => {
+    _selectedPhotoFiles.push(file);
     const url = URL.createObjectURL(file);
     const div = document.createElement('div');
     div.className = 'relative aspect-square rounded-xl overflow-hidden bg-gray-100';
@@ -1201,7 +1203,8 @@ function previewPhotos(files) {
     grid.appendChild(div);
   });
 
-  hint.textContent = `${files.length} photo${files.length !== 1 ? 's' : ''} selected`;
+  grid.classList.remove('hidden');
+  hint.textContent = `${_selectedPhotoFiles.length} photo${_selectedPhotoFiles.length !== 1 ? 's' : ''} selected`;
   hint.classList.remove('hidden');
 
   submitBtn.disabled = false;
@@ -1209,10 +1212,9 @@ function previewPhotos(files) {
 }
 
 async function submitPhotosAndComplete(cleaningId) {
-  const input = document.getElementById('photo-file-input');
   const btn = document.getElementById('submit-photos-btn');
   const errEl = document.getElementById('photo-upload-error');
-  const files = input?.files;
+  const files = _selectedPhotoFiles;
 
   if (!files || files.length === 0) {
     skipPhotosAndComplete(cleaningId);
