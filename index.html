@@ -1230,13 +1230,13 @@ async function submitPhotosAndComplete(cleaningId) {
       const ext = file.name.split('.').pop() || 'jpg';
       const path = `${cleaningId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const { data, error } = await db.storage
-        .from('cleaning-photos')
+        .from('cleaning-fotos')
         .upload(path, file, { upsert: false });
 
       if (error) throw error;
 
       const { data: urlData } = db.storage
-        .from('cleaning-photos')
+        .from('cleaning-fotos')
         .getPublicUrl(data.path);
 
       uploadedUrls.push(urlData.publicUrl);
